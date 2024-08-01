@@ -1,0 +1,7 @@
+[package]
+name = "hindley-milner-typing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ena = "0.14.3"
