@@ -3,5 +3,6 @@ name = "hindley-milner-typing"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+
 [dependencies]
-ena = "0.14.3"
