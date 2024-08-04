@@ -27,7 +27,9 @@ impl TypeFunction {
     }
 
     pub fn matches(f1: &Self, f2: &Self) -> bool {
-        true
+        match (f1, f2) {
+            (Self::Arrow(_, _), Self::Arrow(_, _)) => true,
+        }
     }
 }
 
@@ -54,41 +56,6 @@ impl PolyType {
 pub enum Type<C> {
     Mono(MonoType<C>),
     Poly(PolyType),
-}
-
-impl<C: PartialEq> Type<C> {
-    fn free_variable(id: Id, ctx: &mut TyCtxt<C>) -> HashSet<Id> {
-        let (free, bound) = Self::free_variable_internal(id, ctx);
-        todo!()
-    }
-
-    fn free_variable_internal(id: Id, ctx: &mut TyCtxt<C>) -> (HashSet<Id>, HashSet<Id>) {
-        let (mut free, mut bound) = (HashSet::new(), HashSet::new());
-        let Some(ty) = ctx.ty(id) else {
-            return (free, bound);
-        };
-        match ty {
-            Self::Mono(ty) => match ty {
-                MonoType::Variable => {
-                    free.insert(id);
-                }
-                MonoType::Const(_) => {}
-                MonoType::Func(f) => match f {
-                    TypeFunction::Arrow(id1, id2) => {
-                        let (new_free, new_bound) = Self::free_variable_internal(*id1, ctx);
-                        free.extend(new_free);
-                        bound.extend(new_bound);
-
-                        let (new_free, new_bound) = Self::free_variable_internal(*id2, ctx);
-                        free.extend(new_free);
-                        bound.extend(new_bound);
-                    }
-                },
-            },
-            Self::Poly(ty) => todo!(),
-        }
-        (free, bound)
-    }
 }
 
 impl<C> Type<C> {
@@ -136,6 +103,13 @@ impl IndexMut<Id> for Vec<Id> {
 }
 
 impl UnificationTable {
+    pub fn new() -> Self {
+        Self {
+            generator: AtomicU32::new(0),
+            table: Vec::new(),
+        }
+    }
+
     pub fn next_id(&self) -> Id {
         Id(self.generator.fetch_add(1, Ordering::Relaxed))
     }
@@ -163,6 +137,13 @@ pub struct TyCtxt<C: PartialEq> {
 }
 
 impl<C: PartialEq> TyCtxt<C> {
+    pub fn new() -> Self {
+        Self {
+            id_table: UnificationTable::new(),
+            map: HashMap::new(),
+        }
+    }
+
     pub fn next_id(&self) -> Id {
         self.id_table.next_id()
     }
@@ -185,13 +166,13 @@ impl<C: PartialEq> TyCtxt<C> {
         }
     }
 
-    pub fn free_variable(&mut self) -> Vec<Id> {
+    pub fn free_variable(&mut self) -> HashSet<Id> {
         let mut to_remove = vec![];
-        let mut free_variable = vec![];
+        let mut free_variable = HashSet::new();
         for (id, ty) in &self.map {
             if id == &self.id_table.find(*id) {
                 if ty.is_free() {
-                    free_variable.push(*id);
+                    free_variable.insert(*id);
                 }
             } else {
                 to_remove.push(*id);
@@ -201,6 +182,39 @@ impl<C: PartialEq> TyCtxt<C> {
             self.map.remove(&id);
         }
         free_variable
+    }
+
+    pub fn free_variable_of_expr(&mut self, id: Id) -> HashSet<Id> {
+        let (free, bound) = self.free_variable_of_expr_internal(id);
+        free.difference(&bound).into_iter().cloned().collect()
+    }
+
+    fn free_variable_of_expr_internal(&mut self, id: Id) -> (HashSet<Id>, HashSet<Id>) {
+        let (mut free, mut bound) = (HashSet::new(), HashSet::new());
+        let Some(ty) = self.ty(id) else {
+            return (free, bound);
+        };
+        match ty {
+            Type::Mono(ty) => match ty {
+                MonoType::Variable => {
+                    free.insert(id);
+                }
+                MonoType::Const(_) => {}
+                MonoType::Func(f) => match *f {
+                    TypeFunction::Arrow(id1, id2) => {
+                        let (new_free, new_bound) = self.free_variable_of_expr_internal(id1);
+                        free.extend(new_free);
+                        bound.extend(new_bound);
+
+                        let (new_free, new_bound) = self.free_variable_of_expr_internal(id2);
+                        free.extend(new_free);
+                        bound.extend(new_bound);
+                    }
+                },
+            },
+            Type::Poly(ty) => todo!(),
+        }
+        (free, bound)
     }
 
     pub fn ty(&self, index: Id) -> Option<&Type<C>> {
@@ -250,12 +264,6 @@ impl<C: PartialEq> TyCtxt<C> {
             (Type::Poly(ty1), Type::Poly(ty2)) => {
                 todo!()
             }
-            // (Type::Arrow(ty1, next1), Type::Arrow(ty2, next2)) => {
-            //     let (ty1, next1, ty2, next2) = (*ty1, *next1, *ty2, *next2);
-            //     self.unify(ty1, ty2)?;
-            //     self.unify(next1, next2)?;
-            //     Ok(())
-            // }
             (_, _) => return Err(Error::UnMatch),
         };
 

@@ -1,3 +1,3 @@
-mod expr;
-mod parse;
-mod ty;
+pub mod expr;
+pub mod parse;
+pub mod ty;
